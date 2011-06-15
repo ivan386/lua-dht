@@ -123,11 +123,12 @@ more: http://forum.bittorrent.org/viewtopic.php?pid=2134
 
 other see on http://bittorrent.org/beps/bep_0005.html]=],
 	["a.path"]=[[if (query packet) and (q="help") then it path to new parameter]],
-	["r.help"]=[[if (responce packet) and (q="help") then it help text about new parameter]]
+	["r.help"]=[[if (responce packet) and (q="help") then it help text about new parameter]],
+	["r.ip"]=[[your ip]]
 }
 
 function get_help(path)
-	return help(path)
+	return help[path]
 end
 
 math.randomseed(os.time())
@@ -735,6 +736,7 @@ function send_krpc(udp_port, node, krpc)
 	elseif krpc.r then
 		if not krpc.r.id then 
 			krpc.r.id = get_id(node)
+			krpc.r.ip = encode_ipv4(node.address)
 		end
 	else
 

@@ -13,5 +13,8 @@ http://sourceforge.net/apps/phpbb/shareaza/viewtopic.php?f=2&t=673
 
 add new tracker for all torrents:
 http://127.0.0.1:]]..port_number..[[/announce
+
+info:
+http://127.0.0.1:]]..port_number..[[/
 ]]
 
