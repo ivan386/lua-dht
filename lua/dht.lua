@@ -133,7 +133,7 @@ end
 
 math.randomseed(os.time())
 my_id = random_part(9).."<<< ^-^ >>>"
-my_id_plus = {my_id, "\0"..my_id:sub(2,20), "\127"..my_id:sub(2,20),  "\255"..my_id:sub(2,20)}
+--my_id_plus = {my_id, "\0"..my_id:sub(2,20), "\127"..my_id:sub(2,20),  "\255"..my_id:sub(2,20)}
 
 peers = {btih={}}
 torrent_info = {}
