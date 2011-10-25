@@ -86,7 +86,7 @@ function safe_string(value)
 		return "nil"
 	end
 	
-	return "nil --[[can't serialize; "..tostring(value).."]]"
+	return "nil --[=[can't serialize; "..tostring(value).."]=]"
 end
 
 local function safe_key(key)

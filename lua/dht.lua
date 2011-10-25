@@ -128,6 +128,9 @@ other see on http://bittorrent.org/beps/bep_0005.html]=],
 }
 
 function get_help(path)
+	if type(path)== "table" then
+		path = table.concat(path, ".")
+	end
 	return help[path]
 end
 
@@ -388,8 +391,8 @@ packet_analyze = (function()
 	local top_level_keys = {y = "string", e = "table", q = "string", t = "string", a = "table", r = "table", v = "string"}
 	local tables_keys = {
 		y = {q = true, r = true, e = true},
-		q = {ping = true, find_node = true, get_peers = true, announce_peer = true},
-		a = {id = "string", target = "string", info_hash = "string", token = "string", port = "number", want = "table", scrape = "number", name = "string"},
+		q = {ping = true, find_node = true, get_peers = true, announce_peer = true, vote = true},
+		a = {id = "string", target = "string", info_hash = "string", token = "string", port = "number", want = "table", scrape = "number", name = "string" --[[UTc`]], vote = "number" --[[UTct]], seed = "number" --[[Az]], noseed = "number" --[[LT\0\16]]},
 		r = {id = "string", nodes = "string", nodes2 = "table", values = "table", token = "string", ip = "string"},
 		e = {[1] = "number", [2] = "string"}
 	}
