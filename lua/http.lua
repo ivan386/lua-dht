@@ -74,21 +74,14 @@ function next_client(tcp_port)
 	
 	if string.find(request, " /announce", 1, true) then
 		print("\t\t\t> http (announce)")
-		local peers = get_peers(info_hash, port)
-		local peers_compact = new_string_builder()
-		if peers then
-			for compact, peer in pairs(peers) do
-				--if not peer.compact_sended then
-					peers_compact.add(compact)
-					--peer.compact_sended = os.time()
-				--end
-			end
-		end
+		search_peers(info_hash)
+		announce_peer(info_hash, port)
 		responce = {interval = 120}
-		if not peers_compact.empty() then
-			responce.peers = peers_compact.get()
+		local values = get_values(info_hash, true)
+		if values then
+			responce.peers =table.concat(values)
+			table_type = {[responce] = announce_responce}
 		end
-		table_type = {[responce] = announce_responce}
 	elseif string.find(request, " /scrape", 1, true) then
 		print("\t\t\t> http (scrape)")
 		responce = {[info_hash] = {complete = 0, downloaded = 0, incomplete = 0}}
@@ -289,9 +282,6 @@ function http.search(client, info_hash, port, request)
 		<p>This page refresh every 120 seconds. Whait plz.</p>
 		<p>
 ]])
-	
-
-
 	local protocol = string.match(request, "[?&]protocol=([^& ]+)") or "bittorrent"
 	local file_size = string.match(request, "[?&]xl=([^& ]+)") or ""
 	local file_name = string.match(request, "[?&]dn=([^& ]+)") or ""

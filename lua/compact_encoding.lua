@@ -40,7 +40,7 @@ function encode_port(port, le)
 	local p1 = math.mod(port, 256)
 	local p2 = (port - p1) / 256
 	if le then p1, p2 = p2, p1 end
-	return string.char(p2)..string.char(p1)
+	return string.char(p2, p1)
 end
 
 

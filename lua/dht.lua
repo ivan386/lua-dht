@@ -8,109 +8,11 @@ require("serialize3")
 require("compact_encoding")
 require("nodes")
 require("http")
-
-function getbit(number)
-	if number == 0 then
-		return 0, number
-	elseif number > 0 then
-		local bit = math.mod(number,2)
-		return bit, (number-bit)/2
-	else
-		return nil, "number must be >= 0"
-	end
-end
-
-function xor(n1, n2)
-	local getbit = getbit
-	local n3 = 0
-	local cnt = 1
-	local bit1 = 0
-	local bit2 = 0
-	while (n1 > 0) or (n2 > 0) do
-		
-		bit1, n1 = getbit(n1)
-		bit2, n2 = getbit(n2)
- 
-		if(bit1 ~= bit2) then
-			n3 = n3 + cnt
-		end
-		
-		cnt = cnt * 2
-	end
-	
-	return n3
-end
-
-function less(first_id, second_id, by_id)
-	for i = 1 , 20 do
-		local fl = xor(first_id:byte(i), by_id:byte(i))
-		local sl = xor(second_id:byte(i), by_id:byte(i))
-		if fl < sl then return true end
-		if fl > sl then return false end
-	end
-	return false
-end
+require("util")
 
 function statistic_distance(id1 , id2)
 	return xor(id1:byte(1), id2:byte(1)) * (256^3)  + xor(id1:byte(2), id2:byte(2)) * (256^2) + xor(id1:byte(3), id2:byte(3)) * 256 + xor(id1:byte(4), id2:byte(4))
 end
-
-function count_elements(tbl, stop)
-	local index = next(tbl)
-	local element = tbl[index]
-	local count = 0
-	while element do
-		count = count + 1
-		index = next(tbl, index)
-		element = tbl[index]
-		if stop and count >= stop then break end
-	end
-	return count
-end
-
-function random_part(size)
-	local part = ""
-	for i = 1, size do
-		part = part..string.char(math.random(0, 255))
-	end
-	return part
-end
-
-function new_timer()
-	local last_time = os.time()
-
-	function object(time)
-		if os.time() - last_time >= time then
-			last_time = os.time()
-			return true
-		end
-	end
-	
-	return object
-end
-
-function new_string_builder()
-	local string_table = {}
-	local object = {}
-	
-	function object.add(...)
-		for idx, str in ipairs(arg) do
-			table.insert(string_table, str)
-		end
-	end
-	
-	function object.get(spliter)
-		spliter = spliter or ""
-		return table.concat(string_table, spliter)
-	end
-	
-	function object.empty()
-		return not next(string_table)
-	end
-	
-	return object
-end
-
 
 local help = {
 	["a.name"]="name of torrent",
@@ -271,8 +173,7 @@ function announce(udp_port)
 	end
 end
 
-function get_peers(info_hash, port)
-	search_btih[info_hash] = 15
+function announce_peer(info_hash, port)
 	if port and port > 0 then
 		if not announce_btih[info_hash] then
 			announce_btih[info_hash] = { token = {} }
@@ -281,7 +182,27 @@ function get_peers(info_hash, port)
 	else
 		print("port nil")
 	end
+end
+
+function search_peers(info_hash)
+	search_btih[info_hash] = 15
+end
+
+function get_peers(info_hash, port)
+	search_peers(info_hash)
+	announce_peer(info_hash, port)
 	return peers.btih[info_hash]
+end
+
+function local_packet(krpc)
+	if krpc.y == "q" then
+		if krpc.q == "get_peers" then
+			search_peers(krpc.a.info_hash)
+			return { t = krpc.t, y = "r", r = {values=get_values(krpc.a.info_hash, true)} }
+		elseif  krpc.q == "announce_peer" then
+			announce_peer(krpc.a.info_hash, krpc.a.port)
+		end
+	end
 end
 
 function next_packet(udp_port)
@@ -300,6 +221,14 @@ function next_packet(udp_port)
 	local krpc = from_bencode(data, true)
 	if not krpc then return end
 	if mgs_on then status_print("decoded") end
+	if address == "127.0.0.1" then
+		local ret = local_packet(krpc)
+		if ret then
+			udp_port:sendto(to_bencode(ret), address, port)
+		end
+		return
+	end
+	
 	packet_analyze(krpc)
 	
 	if krpc.y == "e" then
@@ -428,6 +357,28 @@ packet_analyze = (function()
 		end
 	end
 end)()
+
+function get_values(info_hash, not_annonced)
+	local peers_list = peers.btih[info_hash]
+	if peers_list and next(peers_list) then
+		local values = {}
+		local peers_count = 0
+		for compact, peer in pairs(peers_list) do
+			if (os.time() - peer.last_seen) > 15*60 then
+				peers_list[compact] = nil
+			elseif not_annonced or peer.announce_node then
+				peers_count = peers_count + 1
+				table.insert(values, compact)
+			end
+		end
+		
+		if not next(values) then
+			peers.btih[info_hash] = nil
+		else
+			return values, peers_count
+		end
+	end
+end
 	
 function on_query(udp_port, query, node)
 	
@@ -508,25 +459,11 @@ function on_query(udp_port, query, node)
 	
 	if query.q == "get_peers" then
 		krpc.r.token = get_node_token(node)
-		local peers_list = peers.btih[query.a.info_hash]
-		
-		if peers_list then
-			krpc.r.values = {}
-			local peers_count = 0
-			for compact, peer in pairs(peers_list) do
-				if (os.time() - peer.last_seen) > 15*60 then
-					peers_list[compact] = nil
-				elseif peer.announce_node then
-					peers_count = peers_count + 1
-					table.insert(krpc.r.values, compact)
-				end
-			end
-			if peers_count > 0 then
-				if mgs_on then print_msg("found peers:", peers_count, hexenc(id)) end
-				return send_krpc( udp_port, node, krpc, "responce peers" )
-			elseif not next(peers.btih[query.a.info_hash]) then
-				peers.btih[query.a.info_hash] = nil
-			end
+		krpc.r.values = get_values(query.a.info_hash)
+
+		if krpc.r.values then
+			if mgs_on then print_msg("found peers:", #(krpc.r.values), hexenc(id)) end
+			return send_krpc( udp_port, node, krpc, "responce peers" ) 
 		end
 	end
 	
