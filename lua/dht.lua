@@ -37,7 +37,11 @@ function get_help(path)
 end
 
 math.randomseed(os.time())
+
+my_ip = ""
 my_id = random_part(9).."<<< ^-^ >>>"
+
+
 --my_id_plus = {my_id, "\0"..my_id:sub(2,20), "\127"..my_id:sub(2,20),  "\255"..my_id:sub(2,20)}
 
 peers = {btih={}}
@@ -47,7 +51,7 @@ announce_btih = {}
 
 in_packet = 0
 packet_id = 0
-my_ip = ""
+
 
 -----------------------------------------------------------------------------
 function main()
@@ -102,6 +106,37 @@ function main()
 	save_nodes()
 	udp_port:close()
 	tcp_port:close()
+end
+
+local cut_list = {128, 64, 32, 16, 8, 4, 2, 1}
+function number_cut(number, bits_len)
+	for i, n in ipairs(cut_list) do
+		if (8-i >= bits_len) and (number>=n) then
+			number = number - n
+		elseif (8-i < bits_len) then
+			break
+		end
+	end
+	return number 
+end
+
+local r = math.random(0, 7)
+
+function calc_idv4(ip_raw, r)
+	local ip_cut = {string.byte(ip_raw, 1, 4)}
+	ip_cut[1] = "\\"..math.fmod(ip_cut[1], 2)
+	ip_cut[2] = "\\"..number_cut(ip_cut[2], 3)
+	ip_cut[3] = "\\"..number_cut(ip_cut[3], 5)
+	ip_cut[4] = "\\"..number_cut(ip_cut[4], 7)
+	ip_cut[5] = "\\"..r
+	ip_cut = table.concat(ip_cut)
+	local command = "lua5.1 -l binstd -e\"io.write('"..ip_cut.."')\"|rhash -p\"%@h\" -"
+	local x = io.popen(command, "r")
+	return x:read(4)
+end
+
+function change_id()
+	my_id = calc_idv4(my_ip, r)..string.sub(my_id, 5, 19)..string.char(r)
 end
 
 function by_last_seen(node1, node2)
@@ -229,7 +264,9 @@ function next_packet(udp_port)
 		return
 	end
 	
-	packet_analyze(krpc)
+	if packet_analyze(krpc) then
+		--udp_port:sendto(data, address, port)
+	end
 	
 	if krpc.y == "e" then
 		local node = nodes.ap[address..":"..port]
@@ -338,21 +375,21 @@ packet_analyze = (function()
 								print2('found key: '..safe_string(tlk)..'.'..safe_string(k))
 								serialize(packet, nb_out)
 								flush()
-								return
+								return true
 							end
 						end
 					elseif not keys_types[v] then
 						print2('found value: '..safe_string(tlk)..' = '..safe_string(v))
 						serialize(packet, nb_out)
 						flush()
-						return
+						return true
 					end
 				end
 			else
 				print2('found top level key: '..safe_string(tlk)..' = '..safe_string(v))
 				serialize(packet, nb_out)
 				flush()
-				return
+				return true
 			end
 		end
 	end
@@ -540,6 +577,7 @@ function on_responce(responce, query, node)
 	
 	if responce.r.ip and (my_ip ~= responce.r.ip) then
 		my_ip = responce.r.ip
+		change_id()
 		if mgs_on then
 			print(string.format("my_ip = %s", decode_ip(my_ip)))
 		end
@@ -633,9 +671,9 @@ end
 
 function add_info(info, node)
 	if info.id then
-		torrent_info[info.id] = torrent_info[info.id] or {}
-		if info.name then
-			torrent_info[info.id].name = info.name
+		torrent_info[info.info_hash] = torrent_info[info.info_hash] or {}
+		if info.name and #(info.name)>0 then
+			torrent_info[info.info_hash].name = info.name
 		end
 	end
 end

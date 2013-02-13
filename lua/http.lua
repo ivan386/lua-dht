@@ -257,7 +257,8 @@ function http.info(client)
 	buff.add("<html><head><title>Lua DHT Tracker Info</title></head><body><table>")
 	buff.add("<tr><th>BitTorrent Info Hash or Name</th><th>count</th><th>list</th></tr>")
 	for index, value  in pairs(buff1) do
-		buff.add(string.format("<tr><td><a href='magnet:?xt=urn:btih:%s&amp;tr=http://127.0.0.1:%s/announce' title='%s'>%s</a></td><td>%s</td><td>",value.hash, port_number, value.hash, (torrent_info[value.hash_raw] and torrent_info[value.hash_raw].name) or  value.hash, value.count  ))
+		local name = (torrent_info[value.hash_raw] and torrent_info[value.hash_raw].name) or  value.hash
+		buff.add(string.format("<tr><td><a href='magnet:?xt=urn:btih:%s&amp;tr=http://127.0.0.1:%s/announce&amp;dn=%s' title='%s'>%s</a></td><td>%s</td><td>",value.hash, port_number, name, value.hash, name, value.count  ))
 		for compact, peer in pairs(value.list) do
 			buff.add(string.format("<span>%s:%s</span> ", decode_peer(compact)))
 		end
