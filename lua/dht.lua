@@ -136,7 +136,9 @@ function calc_idv4(ip_raw, r)
 end
 
 function change_id()
-	my_id = calc_idv4(my_ip, r)..string.sub(my_id, 5, 19)..string.char(r)
+	if not service then
+		my_id = calc_idv4(my_ip, r)..string.sub(my_id, 5, 19)..string.char(r)
+	end
 end
 
 function by_last_seen(node1, node2)
