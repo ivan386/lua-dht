@@ -46,25 +46,39 @@
 
 --[[
     return ({
-            key1 = 1,
-            key2 = 2,
+			value1,
+			value2,
+            key1 = value3,
+            key2 = value4,
             ...
             function recovery(self)
 
             end
         }):recovery()
 ]]
-function safe_string(value)
+function safe_string(value, cache)
 	if type(value) == "string" then
-		local v = string.gsub(value, "([\\\10\13%c%z\128-\255\"])([0-9]?)", function(chr, digit)
+		local c = cache and cache[value]
+		if c then
+			return c
+		end
+
+		local v = '"'..string.gsub(value, "([\\\10\13%c%z\"])([0-9]?)", function(chr, digit)
 			local b = string.byte(chr)
 			if #digit == 1 then
 				if string.len(b) == 1 then return "\\00"..b..digit end
 				if string.len(b) == 2 then return "\\0"..b..digit end
 			end
 			return "\\"..b..digit
-		end)
-		return '"'..v..'"'
+		end)..'"'
+		
+		if cache then
+			cache[value] = v
+		end
+		
+		return v
+
+		--return string.format('%q', value)
 	elseif type(value) == "number" then
 		if (value > 0) and (value < 0) and (value == 0) then -- indeterminate form
 			return "0/0"
@@ -73,37 +87,50 @@ function safe_string(value)
 		elseif value == -1/0 then -- negative infinity
 			return "-1/0"
 		else
-			return value
+			return tostring(value)
 		end
 	elseif type(value) == "function" then
 		local ok, dump = pcall(string.dump, value)
 		if ok then
-			return "loadstring("..safe_string(dump)..")"
+			return "loadstring("..safe_string(dump, cache)..")"
 		end
 	elseif type(value) == "boolean" then
 		return tostring(value)
 	elseif type(value) == "nil" then
-		return "nil"
+		--return "nil"
 	end
 	
-	return "nil --[=[can't serialize; "..tostring(value).."]=]"
+	return nil
 end
 
-local function safe_key(key)
-	local safe_name = string.match(key, "^([A-Za-z_]+[A-Za-z0-9_]*)$")
-	if safe_name then
-		return safe_name, "."
+local function safe_key(key, cache, safe_string_cache)
+	local c = cache and cache[key]
+	if c then
+		return c[1], c[2]
 	end
-	return "["..safe_string(key).."]", ""
+	
+	local safe_name = string.match(key, "^([A-Za-z_]+[A-Za-z0-9_]*)$")
+	local dot = "."
+	
+	
+	if not safe_name then
+		safe_name = "["..safe_string(key, safe_string_cache).."]"
+		dot = ""
+	end
+	
+	if cache then
+		cache[key] = {safe_name, dot}
+	end
+	return safe_name, dot
 end
 
 local function testname(name)
-	assert( (type(name) == "table")
+	--[[assert( (type(name) == "table")
 			or (name:sub(1,1) == ".")
 			or (name:sub(1,1) == "[")
 			or (name:sub(1,4) == "root")
 			or (name:sub(1,3) == "key")
-	)
+	)]]
 end
 	
 function serialize(value, fnc_write, skip)
@@ -113,7 +140,15 @@ function serialize(value, fnc_write, skip)
 		local recover = {}
 		local recovery_name = "recovery"
 		local deep = 0
+		local return_string = (not fnc_write) and {}
+		local safe_string_cache = {}
+		local safe_key_cache = {}
 		
+		if return_string then
+			fnc_write = function(text)
+				table.insert(return_string, text)
+			end
+		end
 
 		
 		local function add_key_value(tabl, key, value)
@@ -127,13 +162,20 @@ function serialize(value, fnc_write, skip)
 		end
 		
 		local serialize_table
-		local function serialize_value(value, name, parent)
+		local function serialize_value(value, name, dot, parent, prefix)
 			if type(value) == "table" then
-				serialize_table(value, name, parent)
+				local not_empty, deferred_creation = serialize_table(value, name, dot, parent, prefix);
+				return (not_empty or (not deferred_creation)), deferred_creation
 			else
-				fnc_write(safe_string(value))
-				if (type(value) == "function") then
-					obj_map[value] = {name = name , parent = parent}
+				local serialized = safe_string(value, safe_string_cache)
+				if serialized then
+					if prefix then fnc_write(prefix) end
+					fnc_write(serialized)
+				
+					if (type(value) == "function") then
+						obj_map[value] = {name = name, dot = dot , parent = parent}
+					end
+					return true
 				end
 			end
 		end	
@@ -141,62 +183,122 @@ function serialize(value, fnc_write, skip)
 		local function tbl_new_line(not_empty, deep)
 			return string.format((not_empty and ",\n%s") or "\n%s", string.rep("\t", deep))
 		end
+		
+		
+		
 
-		function serialize_table(tabl, name, parent, open)
-			assert(obj_map[tabl] == nil)
-			obj_map[tabl] = {name = name , parent = parent}
-			testname(name)
-			fnc_write("{")
-			deep = deep + 1
-
-			local not_empty
-			local last_index
+		local function serialize_by_index(tabl, prefix)
+			local not_empty, last_index
 			
 			for index, value in ipairs(tabl) do
 				if obj_map[value] then
 					break
 				end
 				if (not skip) or not skip(tabl, index, value) then
-					fnc_write(tbl_new_line(not_empty, deep))
-					serialize_value(value, string.format("[%i]", index), tabl)
-					last_index = index
-					not_empty = true
+					local value_prefix = ((not_empty and "") or prefix or "") .. tbl_new_line(not_empty, deep)
+					local writen, deferred_creation = serialize_value(value, string.format("[%i]", index), nil, tabl, value_prefix)
+					if writen then
+						last_index = index
+						not_empty = true
+					elseif deferred_creation then
+						return not_empty, index-1, deferred_creation
+					else
+						return not_empty, last_index
+					end
+				else
+					break
 				end
 			end
+			return not_empty, last_index
+		end
+		
+		local function check_in_parents(obj, parent)
 			
+			if not parent then
+				return false
+			elseif obj == parent then
+				return true
+			end
+			local info = obj_map[parent]
+			return check_in_parents(obj, info.parent)
+		end
+		
+		local function serialize_by_keys(tabl, last_index, parent, not_empty, prefix)
+			local have_recover, parent_link, obj_as_key
 			for key, value in pairs(tabl) do
 				if (not skip) or not skip(tabl, key, value) then
-					if (type(key) == "table")
-					or (type(key) == "function")
+					
+				
+					if 	   (type(key) == "table")
+						or (type(key) == "function")
 					then
+						obj_as_key = true
 						add_key_value(tabl, key, value)
 					elseif (not last_index)
-					or (type(key) ~= "number")
-					or (key > last_index)
-					or (key < 1)
-					or (key > math.floor(key))
+						or (type(key) ~= "number")
+						or (key > last_index)
+						or (key < 1)
+						or (key > math.floor(key))
 					then
-						local name, dot = safe_key(key)
-						testname(dot..name)
-						if obj_map[value] then
-							table.insert(recover, {tabl = tabl, name = dot..name, value = value})
-						else
-							fnc_write(string.format("%s%s=", tbl_new_line(not_empty, deep), name))
-							serialize_value(value, dot..name, tabl)
-							not_empty = true
+						local name, dot = safe_key(key, safe_key_cache, safe_string_cache)
+						local value_prefix = string.format("%s%s%s=", ((not_empty and "") or prefix or ""), tbl_new_line(not_empty, deep), name)
+						local info = obj_map[value]
+						if info then
+							parent_link = check_in_parents(value, parent)
+							have_recover = true
+							table.insert(recover, {tabl = tabl, dot = dot, name = name, value = value})
+						else 
+							local writed, deferred_creation = serialize_value( value, 
+											 name,
+											 dot,
+											 tabl,
+											 value_prefix )
+							if writed then
+								not_empty = true
+							elseif deferred_creation then
+								have_recover = true
+							end
 						end
 					end
 				end
 			end
+			return not_empty, have_recover and not(parent_link or obj_as_key)
+		end
+		
+		function serialize_table(tabl, name, dot, parent, prefix, open)
+			assert(obj_map[tabl] == nil)
+			obj_map[tabl] = {name = name, dot = dot , parent = parent}
+			testname(name)
+			
+			if prefix then
+				prefix = prefix.."{"
+			else
+				prefix = "{"
+			end
+
+			deep = deep + 1
+
+			local not_empty, last_index, deferred_creation = serialize_by_index(tabl, prefix)
+			
+			
+			if not_empty then
+				serialize_by_keys(tabl, last_index, parent, not_empty)
+			else
+				not_empty, deferred_creation = serialize_by_keys(tabl, last_index, parent, not_empty, prefix)
+			end
+			
 			deep = deep - 1
 			if not open then 
 				if not_empty then
 					fnc_write(string.format("\n%s}", string.rep("\t", deep))) 
+				elseif deferred_creation and parent then
+					obj_map[tabl].deferred_creation = deferred_creation
 				else
+					fnc_write(prefix)
 					fnc_write("}")
 				end
 			end
-			return not_empty
+			return not_empty, deferred_creation
 		end
 		
 		local get_key, format_key
@@ -209,14 +311,26 @@ function serialize(value, fnc_write, skip)
 			end
 		end
 		
+
+		
 		function get_key(obj)
 			local key = {}
 			local info = obj_map[obj]
+			local open_objects = 0
+			local dot = ""
 			while info do
+				if info.deferred_creation then
+					table.insert(key, 1, "={")
+					open_objects = open_objects + 1
+					info.deferred_creation = false;
+				else
+					table.insert(key, 1, dot)
+				end
+				dot = info.dot or ""
 				table.insert(key, 1, format_key(info.name))
 				info = obj_map[info.parent]
 			end
-			return table.concat(key)
+			return table.concat(key), open_objects
 		end
 	
         fnc_write("(")
@@ -231,49 +345,74 @@ function serialize(value, fnc_write, skip)
 			recovery_name = new_name
 		end
 		
-        local not_empty = serialize_table(value, "root", nil, true)
+        local not_empty = serialize_table(value, "root", nil, nil, nil, true)
 		
 		-- recover links
         if next(keys.order) or next(recover) then
 			deep = deep + 2
 			local tabs = string.rep("\t", deep)
-            fnc_write(string.format("%s%s=function(root)\n\t\troot.%s=nil;\n\t\tlocal key={};\n", 
+            fnc_write(string.format("%s%s=function(root)\n\t\troot.%s=nil;\n", 
 				((not_empty and ",\n\t") or ""), recovery_name, recovery_name))
 			local idx = 0
-            while next(keys.order) do
-                local keys_old = keys
-                keys = {order = {}, links = {}}
-                for _, key in ipairs(keys_old.order) do
-					if not obj_map[key] then
-						idx = idx + 1
-						local key_name = string.format("key[%i]", idx)
-						fnc_write(string.format("%s%s=", tabs, key_name))
-						serialize_value(key, key_name)
-						fnc_write(";\n")
-					end
-                    
-                    for _, link in pairs(keys_old.links[key]) do
-						if obj_map[link.value] then
-							testname(key)
-							table.insert(recover, {tabl = link.tabl, name = key, value = link.value})
-						else
-							fnc_write(string.format("%s%s[%s]=", tabs, get_key(link.tabl), get_key(key)))
-							serialize_value(link.value, key, link.tabl)
-							fnc_write(";\n")
+			if next(keys.order) then
+				
+				local local_key = "\t\tlocal key={};\n"
+				repeat
+					local keys_old = keys
+					keys = {order = {}, links = {}}
+					for _, key in ipairs(keys_old.order) do
+						if not obj_map[key] then
+							idx = idx + 1
+
+							local key_name = string.format("key[%i]", idx)
+							local prefix = string.format("%s\t\t%s=", local_key, key_name)
+							if serialize_value(key, key_name, nil, nil, prefix) then
+								fnc_write(";\n")
+								local_key = ""
+							end
 						end
-                    end
-                end
-            end
-			
+						if obj_map[key] then
+							for _, link in pairs(keys_old.links[key]) do
+								if obj_map[link.value] then
+									table.insert(recover, {tabl = link.tabl, name = key, value = link.value})
+								elseif serialize_value(	link.value,
+														key,
+														nil,
+														link.tabl,
+														string.format("%s%s[%s]=", tabs, get_key(link.tabl), get_key(key)))
+								then
+									fnc_write(";\n")
+								end
+							end
+						end
+					end
+				until not next(keys.order)
+			end
 			for _, rec in ipairs(recover) do
-				fnc_write(string.format("%s%s%s=%s;\n", tabs, get_key(rec.tabl), format_key(rec.name), get_key(rec.value)))
+				local in_key, open_objects = get_key(rec.tabl)
+				local dot = ""
+				if open_objects == 0 and rec.dot then
+					dot = rec.dot
+				end
+				
+				fnc_write(string.format("%s%s%s%s=%s%s;\n", tabs, in_key, dot,  format_key(rec.name), get_key(rec.value), string.rep("}", open_objects)))
 			end
             fnc_write(string.format("\t\treturn root;\n\tend\n}):%s()", recovery_name))
         else
             fnc_write("})")
         end
+		if return_string then
+			return table.concat(return_string)
+		end
     else
-        fnc_write(safe_string(value))
+		local serialized = safe_string(value)
+        if serialized then 
+			if fnc_write then
+				fnc_write(serialized) 
+			else
+				return serialized
+			end
+		end
     end
 end
 --[[
