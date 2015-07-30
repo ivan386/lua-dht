@@ -65,6 +65,7 @@ end
 
 function add_node(id, address, port, check_fnc, ... )
 	if is_local(address) then return end
+	if is_blocked_port(port) then return end 
 	
 	local node = node_by_ip_port(address, port)
 	
@@ -139,8 +140,11 @@ end
 
 
 function remove_node_id_ip(node)
-	nodes.by_id[node.id][node.address] = nil
-	if not next(nodes.by_id[node.id]) then nodes.by_id[node.id] = nil end
+	list = nodes.by_id[node.id]
+	if list then
+		list[node.address] = nil
+		if not next(list) then nodes.by_id[node.id] = nil end
+	end
 end
 
 function remove_node_ip_port(node)
@@ -250,4 +254,8 @@ function is_local(ip)
 	elseif (ip[1] == 127) then	
 		return true
 	end
+end
+
+function is_blocked_port(port)
+	return (port < 1024) or (port > 65535)
 end
