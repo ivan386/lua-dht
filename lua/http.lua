@@ -129,8 +129,8 @@ function http.main_page(client)
 		buff.add(
 [[
 <p>
-	node ip: ]]..decode_ip(my_ip).."<br />\n"..[[
-	node id: ]]..hexenc(my_id).."<br />\n"..[[
+	node ip: ]]..decode_ip(#my_ip == 4 and my_ip or "\0\0\0\0").."<br />\n"..[[
+	node id: ]]..hexenc(my_id or "").."<br />\n"..[[
 	nodes count: ]]..(nodes.count or "unknown").."\n"..[[
 </p>
 
@@ -171,10 +171,11 @@ function http.svg_map(client)
  xmlns:xlink="http://www.w3.org/1999/xlink"
  xmlns:ev="http://www.w3.org/2001/xml-events"
  width="800" height="600">
+ <meta http-equiv="refresh" content="5" xmlns="http://www.w3.org/1999/xhtml" />
 ]])
 	
 	
-	buff[1].add([[<g stroke="red" >]])
+	buff[1].add([[<g stroke="#FFAAAA" >]])
 	buff[2].add([[<g fill="#000088" >]])
 	buff[3].add([[<g stroke="#000088" stroke-whith="2px" fill="none">]])
 	buff[4].add([[<g stroke="#880000">]])

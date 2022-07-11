@@ -356,12 +356,12 @@ end
 
 packet_analyze = (function()
 	-- local const
-	local top_level_keys = {y = "string", e = "table", q = "string", t = "string", a = "table", r = "table", v = "string"}
+	local top_level_keys = {y = "string", e = "table", q = "string", t = "string", a = "table", r = "table", v = "string", ip = "string"}
 	local tables_keys = {
 		y = {q = true, r = true, e = true},
 		q = {ping = true, find_node = true, get_peers = true, announce_peer = true, vote = true},
 		a = {id = "string", target = "string", info_hash = "string", token = "string", port = "number", want = "table", scrape = "number", name = "string" --[[UTc`]], vote = "number" --[[UTct]], seed = "number" --[[Az]], noseed = "number" --[[LT\0\16]]},
-		r = {id = "string", nodes = "string", nodes2 = "table", values = "table", token = "string", ip = "string"},
+		r = {id = "string", nodes = "string", nodes2 = "table", values = "table", token = "string", ip = "string", p = "number"},
 		e = {[1] = "number", [2] = "string"}
 	}
 	
@@ -577,13 +577,23 @@ function on_responce(responce, query, node)
 		node.client = responce.v
 	end
 	
-	if responce.r.ip and (my_ip ~= responce.r.ip) then
+	if responce.ip then
+		if my_ip ~= responce.ip:sub(1,4) then
+			my_ip = responce.ip:sub(1,4)
+			change_id()
+			if mgs_on then
+				print(string.format("my_ip = %s", decode_ip(my_ip)))
+			end
+		end
+	end
+	
+--[[	if responce.r.ip and (my_ip ~= responce.r.ip) then
 		my_ip = responce.r.ip
 		change_id()
 		if mgs_on then
 			print(string.format("my_ip = %s", decode_ip(my_ip)))
 		end
-	end
+	end]]
 	
 	if mgs_on then
 		print(string.format("%s\t\t\t> responce (%s): %s, %s",

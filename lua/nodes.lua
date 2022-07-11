@@ -64,8 +64,8 @@ function node_by_id_ip(id, ip)
 end
 
 function add_node(id, address, port, check_fnc, ... )
-	if is_local(address) then return end
 	if is_blocked_port(port) then return end 
+	if is_local(address) then return end
 	
 	local node = node_by_ip_port(address, port)
 	
